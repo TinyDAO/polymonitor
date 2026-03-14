@@ -6,16 +6,28 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  ComposedChart,
-  Line,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Filler,
+  Title,
+  Tooltip as ChartTooltip,
   Legend,
-} from "recharts";
+} from "chart.js";
+import { Line } from "react-chartjs-2";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Filler,
+  Title,
+  ChartTooltip,
+  Legend
+);
 
 type Address = {
   id: string;
@@ -347,98 +359,121 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
               <h2 className="mb-3 shrink-0 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
                 30 days
               </h2>
-              <div className="min-h-0 flex-1">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={chartData} margin={{ top: 8, right: 56, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="totalAreaGradient" x1="0" y1="1" x2="0" y2="0">
-                        <stop offset="0%" stopColor="rgba(94, 234, 212, 0.04)" />
-                        <stop offset="50%" stopColor="rgba(94, 234, 212, 0.12)" />
-                        <stop offset="100%" stopColor="rgba(94, 234, 212, 0.2)" />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="var(--border-subtle)"
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey="date"
-                      stroke="var(--text-muted)"
-                      tick={{ fontSize: 11 }}
-                      interval="preserveStartEnd"
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      yAxisId="left"
-                      stroke="var(--text-muted)"
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`}
-                      axisLine={false}
-                      tickLine={false}
-                      width={50}
-                    />
-                    <YAxis
-                      yAxisId="total"
-                      orientation="right"
-                      stroke="var(--text-muted)"
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`}
-                      axisLine={false}
-                      tickLine={false}
-                      width={50}
-                    />
-                    <Tooltip
-                      shared={false}
-                      contentStyle={{
-                        backgroundColor: "var(--bg-card)",
-                        border: "1px solid var(--border-default)",
-                        borderRadius: "8px",
-                        boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
-                      }}
-                      formatter={(value, name) => [
-                        value != null ? `$${Number(value).toFixed(2)}` : "",
-                        name,
-                      ]}
-                    />
-                    <Legend
-                      wrapperStyle={{ paddingTop: 12 }}
-                      iconType="circle"
-                      iconSize={8}
-                      formatter={(value) => (
-                        <span className="text-sm text-[var(--text-secondary)]">
-                          {value}
-                        </span>
-                      )}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="total"
-                      name="Total"
-                      yAxisId="total"
-                      fill="url(#totalAreaGradient)"
-                      stroke="none"
-                      dot={false}
-                      isAnimationActive={false}
-                    />
-                    {Object.keys(addressMap).map((addrId, i) => {
-                      const label = addressMap[addrId];
-                      return (
-                        <Line
-                          key={addrId}
-                          type="monotone"
-                          dataKey={label}
-                          yAxisId="left"
-                          stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                          strokeWidth={2.5}
-                          dot={{ r: 2 }}
-                          activeDot={{ r: 5, strokeWidth: 2 }}
-                        />
-                      );
-                    })}
-                  </ComposedChart>
-                </ResponsiveContainer>
+              <div className="h-[280px] min-h-0 flex-1 sm:h-[320px]">
+                <Line
+                  data={{
+                    labels: chartData.map((d) => d.date),
+                    datasets: [
+                      {
+                        label: "Total",
+                        data: chartData.map((d) => d.total),
+                        fill: true,
+                        backgroundColor: "rgba(94, 234, 212, 0.06)",
+                        borderColor: "transparent",
+                        borderWidth: 0,
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
+                        pointBackgroundColor: "rgba(94, 234, 212, 0.5)",
+                        pointBorderWidth: 0,
+                        yAxisID: "y1",
+                      },
+                      ...Object.keys(addressMap).map((addrId, i) => {
+                        const label = addressMap[addrId];
+                        const color = CHART_COLORS[i % CHART_COLORS.length];
+                        return {
+                          label,
+                          data: chartData.map((d) => {
+                            const v = (d as Record<string, unknown>)[label];
+                            return typeof v === "number" ? v : 0;
+                          }),
+                          fill: false,
+                          borderColor: color,
+                          borderWidth: 2.5,
+                          pointRadius: 2,
+                          pointHoverRadius: 5,
+                          pointHoverBorderWidth: 2,
+                          pointBackgroundColor: color,
+                          pointBorderWidth: 0,
+                          tension: 0.3,
+                          yAxisID: "y",
+                        };
+                      }),
+                    ],
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: "index", intersect: false },
+                    plugins: {
+                      legend: {
+                        position: "top",
+                        labels: {
+                          font: { size: 12 },
+                          color: "#8b92a3",
+                          usePointStyle: true,
+                          pointStyle: "circle",
+                        },
+                      },
+                      tooltip: {
+                        backgroundColor: "#13171f",
+                        titleColor: "#f4f5f7",
+                        bodyColor: "#8b92a3",
+                        borderColor: "rgba(255,255,255,0.1)",
+                        borderWidth: 1,
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                          label: (ctx) =>
+                            ctx.parsed.y != null
+                              ? `${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(2)}`
+                              : "",
+                        },
+                      },
+                    },
+                    scales: {
+                      x: {
+                        grid: { display: false },
+                        ticks: {
+                          color: "#5c6478",
+                          font: { size: 11 },
+                          maxRotation: 0,
+                        },
+                      },
+                      y: {
+                        position: "left",
+                        grid: {
+                          color: "rgba(255,255,255,0.06)",
+                          drawTicks: false,
+                        },
+                        ticks: {
+                          color: "#5c6478",
+                          font: { size: 11 },
+                          callback: (v) =>
+                            typeof v === "number"
+                              ? v >= 1000
+                                ? `$${(v / 1000).toFixed(1)}k`
+                                : `$${v}`
+                              : v,
+                        },
+                      },
+                      y1: {
+                        position: "right",
+                        grid: { drawOnChartArea: false },
+                        ticks: {
+                          color: "#5c6478",
+                          font: { size: 11 },
+                          callback: (v) =>
+                            typeof v === "number"
+                              ? v >= 1000
+                                ? `$${(v / 1000).toFixed(1)}k`
+                                : `$${v}`
+                              : v,
+                        },
+                      },
+                    },
+                    animation: false,
+                  }}
+                />
               </div>
             </motion.div>
           ) : (
@@ -559,7 +594,7 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
                                 height: hoveredAddrId === addr.id ? 16 : 0,
                               }}
                               transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                              className="overflow-hidden text-[10px] leading-tight text-[var(--text-muted)]"
+                              className="overflow-hidden text-[10px] pt-[5px] leading-tight text-[var(--text-muted)]"
                             >
                               onchain: ${usdcVal.toFixed(2)}  position: ${polyVal.toFixed(2)}
                             </motion.div>

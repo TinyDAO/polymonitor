@@ -11,10 +11,33 @@ jobs:
     steps:
       - name: Sync balances
         run: |
-          curl -X POST "${{ secrets.API_URL }}/api/cron/sync-balances" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json" \
-            -f -s -S -o /dev/null -w "%{http_code}"
+          max_retries=5
+          for attempt in $(seq 1 $max_retries); do
+            echo "Attempt $attempt/$max_retries"
+            response=$(curl -X POST "$API_URL/api/cron/sync-balances" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              -H "Content-Type: application/json" \
+              -w "\n%{http_code}" \
+              -s -S 2>&1) || true
+
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+
+            echo "HTTP Status: $http_code"
+            echo "Response: $body"
+
+            if [ -n "$http_code" ] && [ "$http_code" -ge 200 ] 2>/dev/null && [ "$http_code" -lt 300 ] 2>/dev/null; then
+              echo "Success"
+              exit 0
+            fi
+
+            if [ $attempt -lt $max_retries ]; then
+              echo "Request failed (HTTP ${http_code:-unknown}), retrying in 3 seconds..."
+              sleep 3
+            fi
+          done
+          echo "Failed after $max_retries attempts"
+          exit 1
         env:
           API_URL: ${{ secrets.API_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
