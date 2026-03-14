@@ -52,14 +52,18 @@ type Kanban = {
 
 type SortMode = "default" | "amount";
 
-const CHART_COLORS = [
-  "#7dd3fc", // sky-300
-  "#5eead4", // teal-300
-  "#a5b4fc", // indigo-300
-  "#d8b4fe", // purple-300
-  "#f9a8d4", // pink-300
-  "#86efac", // green-300
+// 3 色相（青/橙/紫），交错深浅，相邻线条颜色差异大
+const CHART_COLOR_BASES = [
+  ["#67e8f9", "#22d3ee", "#06b6d4"], // cyan
+  ["#fcd34d", "#fbbf24", "#f59e0b"], // amber
+  ["#c4b5fd", "#a78bfa", "#8b5cf6"], // violet
 ];
+
+function getChartColor(index: number): string {
+  const base = index % 3;
+  const shade = Math.floor(index / 3) % 3;
+  return CHART_COLOR_BASES[base][shade];
+}
 
 export function KanbanDetail({ kanban }: { kanban: Kanban }) {
   const router = useRouter();
@@ -379,7 +383,7 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
                       },
                       ...Object.keys(addressMap).map((addrId, i) => {
                         const label = addressMap[addrId];
-                        const color = CHART_COLORS[i % CHART_COLORS.length];
+                        const color = getChartColor(i);
                         return {
                           label,
                           data: chartData.map((d) => {
