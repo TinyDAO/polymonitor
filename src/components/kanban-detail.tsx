@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "motion/react";
 import {
-  LineChart,
+  ComposedChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -36,6 +38,17 @@ type Kanban = {
   addresses: Address[];
 };
 
+type SortMode = "default" | "amount";
+
+const CHART_COLORS = [
+  "#7dd3fc", // sky-300
+  "#5eead4", // teal-300
+  "#a5b4fc", // indigo-300
+  "#d8b4fe", // purple-300
+  "#f9a8d4", // pink-300
+  "#86efac", // green-300
+];
+
 export function KanbanDetail({ kanban }: { kanban: Kanban }) {
   const router = useRouter();
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
@@ -46,6 +59,22 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [snapshotRefreshKey, setSnapshotRefreshKey] = useState(0);
+  const [sortMode, setSortMode] = useState<SortMode>("default");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [toRemove, setToRemove] = useState<Set<string>>(new Set());
+  const [hoveredAddrId, setHoveredAddrId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const fetchSnapshots = useCallback(() => {
     setLoading(true);
@@ -115,10 +144,34 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
     }
   }
 
-  async function handleDeleteAddress(addrId: string) {
-    if (!confirm("Remove this address?")) return;
-    const res = await fetch(`/api/addresses/${addrId}`, { method: "DELETE" });
-    if (res.ok) window.location.reload();
+  function toggleRemove(addrId: string) {
+    setToRemove((prev) => {
+      const next = new Set(prev);
+      if (next.has(addrId)) next.delete(addrId);
+      else next.add(addrId);
+      return next;
+    });
+  }
+
+  async function handleBatchRemove() {
+    if (toRemove.size === 0) {
+      setEditMode(false);
+      return;
+    }
+    if (!confirm(`Remove ${toRemove.size} address(es)?`)) return;
+    try {
+      await Promise.all(
+        Array.from(toRemove).map((id) =>
+          fetch(`/api/addresses/${id}`, { method: "DELETE" })
+        )
+      );
+      toast.success(`Removed ${toRemove.size} address(es)`);
+      setToRemove(new Set());
+      setEditMode(false);
+      window.location.reload();
+    } catch {
+      toast.error("Failed to remove addresses");
+    }
   }
 
   async function handleDeleteKanban() {
@@ -129,6 +182,39 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
 
   const addressMap = Object.fromEntries(
     kanban.addresses.map((a) => [a.id, a.label])
+  );
+
+  const latestByAddress = useMemo(
+    () =>
+      snapshots.reduce<Record<string, Snapshot>>((acc, s) => {
+        const prev = acc[s.addressId];
+        if (!prev || new Date(s.createdAt) > new Date(prev.createdAt)) {
+          acc[s.addressId] = s;
+        }
+        return acc;
+      }, {}),
+    [snapshots]
+  );
+
+  const sortedAddresses = useMemo(() => {
+    const addrs = [...kanban.addresses];
+    if (sortMode === "amount") {
+      addrs.sort((a, b) => {
+        const valA = latestByAddress[a.id]
+          ? parseFloat(latestByAddress[a.id].totalValue)
+          : 0;
+        const valB = latestByAddress[b.id]
+          ? parseFloat(latestByAddress[b.id].totalValue)
+          : 0;
+        return valB - valA;
+      });
+    }
+    return addrs;
+  }, [kanban.addresses, sortMode, latestByAddress]);
+
+  const totalValue = Object.values(latestByAddress).reduce(
+    (sum, s) => sum + parseFloat(s.totalValue),
+    0
   );
 
   const byHour = snapshots
@@ -148,6 +234,7 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([hour, values]) => {
       const d = new Date(hour + ":00:00Z");
+      const total = Object.values(values).reduce((s, v) => s + v, 0);
       return {
         date: d.toLocaleDateString(undefined, {
           month: "short",
@@ -155,221 +242,430 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
           hour: "2-digit",
         }),
         sortKey: hour,
+        total,
         ...values,
       };
     });
 
-  const latestByAddress = snapshots.reduce<Record<string, Snapshot>>(
-    (acc, s) => {
-      const prev = acc[s.addressId];
-      if (!prev || new Date(s.createdAt) > new Date(prev.createdAt)) {
-        acc[s.addressId] = s;
-      }
-      return acc;
-    },
-    {}
-  );
-
-  const totalValue = Object.values(latestByAddress).reduce(
-    (sum, s) => sum + parseFloat(s.totalValue),
-    0
-  );
-
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      className="flex min-h-0 flex-1 flex-col gap-4"
+    >
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <Link
             href="/dashboard"
-            className="text-zinc-400 hover:text-zinc-100"
+            className="text-[var(--text-secondary)] transition-colors hover:text-[var(--accent-cyan)]"
           >
             ← Back
           </Link>
-          <h1 className="text-2xl font-bold">{kanban.name}</h1>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            {kanban.name}
+          </h1>
         </div>
-        <div className="flex gap-2">
-          <button
+        <div className="flex flex-wrap gap-2">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={handleSync}
             disabled={refreshing || kanban.addresses.length === 0}
-            className="rounded-lg border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+            className="rounded-lg border border-[var(--border-default)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
             title="Refresh balances"
           >
             {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => setShowAddForm(true)}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+            className="rounded-lg bg-[var(--accent-cyan)] px-4 py-2 text-sm font-semibold text-[var(--bg-base)]"
           >
             + Add Address
-          </button>
-          <button
-            onClick={handleDeleteKanban}
-            className="rounded-lg border border-red-500/50 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10"
-          >
-            Delete Kanban
-          </button>
+          </motion.button>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen((o) => !o)}
+              className={`rounded-lg border px-3 py-2 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] ${
+                menuOpen
+                  ? "border-[var(--border-default)] bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                  : "border-[var(--border-default)] hover:bg-[var(--bg-hover)]"
+              }`}
+              aria-label="More options"
+              aria-expanded={menuOpen}
+            >
+              ⋯
+            </button>
+            <AnimatePresence>
+              {menuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-full z-50 mt-1.5 min-w-[160px] rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                >
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      handleDeleteKanban();
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-[var(--accent-red)] transition-colors hover:bg-[var(--accent-red-dim)]"
+                  >
+                    Delete Kanban
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
-      <div className="rounded-lg border border-zinc-700 bg-zinc-900/50 p-6">
-        <h2 className="text-lg font-semibold">Total Value</h2>
-        <p className="mt-2 text-3xl font-bold text-emerald-400">
+      {/* Total Value */}
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs text-[var(--text-muted)]">Total</span>
+        <span className="font-mono-custom text-xl font-semibold text-[var(--accent-emerald)] sm:text-2xl">
           ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-        </p>
-        <p className="mt-1 text-sm text-zinc-500">USDC</p>
+        </span>
+        <span className="text-xs text-[var(--text-muted)]">USDC</span>
       </div>
 
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Addresses</h2>
-        {kanban.addresses.length === 0 ? (
-          <p className="text-zinc-500">No addresses yet. Add one to monitor.</p>
-        ) : (
-          <div className="space-y-2">
-            {kanban.addresses.map((addr) => {
-              const snap = latestByAddress[addr.id];
-              const totalVal = snap ? parseFloat(snap.totalValue) : 0;
-              const usdcVal = snap ? parseFloat(snap.usdcBalance) : 0;
-              const polyVal = snap ? parseFloat(snap.polymarketValue) : 0;
-              return (
-                <div
-                  key={addr.id}
-                  className="flex items-center justify-between rounded-lg border border-zinc-700 bg-zinc-900/50 p-4"
-                >
-                  <div>
-                    <p className="font-medium">{addr.label}</p>
-                    <p className="text-sm text-zinc-500 font-mono">
-                      {addr.address.slice(0, 10)}...{addr.address.slice(-8)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="text-emerald-400 font-mono">
-                        ${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </span>
-                      <div className="text-xs text-zinc-500">
-                        <span>Poly: ${polyVal.toFixed(2)}</span>
-                        <span className="mx-2">|</span>
-                        <span>USDC: ${usdcVal.toFixed(2)}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <a
-                        href={`https://polymarket.com/profile/${addr.address}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded border border-zinc-600 px-3 py-1.5 text-sm text-zinc-300 hover:border-emerald-500 hover:text-emerald-400"
-                      >
-                        View
-                      </a>
-                      <button
-                        onClick={() => handleDeleteAddress(addr.id)}
-                        className="text-sm text-red-400 hover:text-red-300"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {chartData.length > 0 && (
-        <div className="rounded-lg border border-zinc-700 bg-zinc-900/50 p-6">
-          <h2 className="mb-4 text-lg font-semibold">
-            Value Over Time (hourly, 30 days)
-          </h2>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis
-                  dataKey="date"
-                  stroke="#71717a"
-                  tick={{ fontSize: 10 }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis stroke="#71717a" tickFormatter={(v) => `$${v}`} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#18181b",
-                    border: "1px solid #27272a",
-                    borderRadius: "8px",
-                  }}
-                  formatter={(value) => [value != null ? `$${Number(value).toFixed(2)}` : "", ""]}
-                />
-                <Legend />
-                {Object.keys(addressMap).map((addrId, i) => {
-                  const label = addressMap[addrId];
-                  const colors = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444"];
-                  return (
-                    <Line
-                      key={addrId}
-                      type="monotone"
-                      dataKey={label}
-                      stroke={colors[i % colors.length]}
-                      dot={false}
-                      strokeWidth={2}
+      {/* Left-Right Layout: Chart | Addresses */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-6">
+        {/* Left: Chart */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {chartData.length > 0 ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="flex min-h-0 flex-1 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 lg:p-5"
+            >
+              <h2 className="mb-3 shrink-0 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                30 days
+              </h2>
+              <div className="min-h-0 flex-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={chartData} margin={{ top: 8, right: 56, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="totalAreaGradient" x1="0" y1="1" x2="0" y2="0">
+                        <stop offset="0%" stopColor="rgba(94, 234, 212, 0.04)" />
+                        <stop offset="50%" stopColor="rgba(94, 234, 212, 0.12)" />
+                        <stop offset="100%" stopColor="rgba(94, 234, 212, 0.2)" />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--border-subtle)"
+                      vertical={false}
                     />
-                  );
-                })}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+                    <XAxis
+                      dataKey="date"
+                      stroke="var(--text-muted)"
+                      tick={{ fontSize: 11 }}
+                      interval="preserveStartEnd"
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      stroke="var(--text-muted)"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`}
+                      axisLine={false}
+                      tickLine={false}
+                      width={50}
+                    />
+                    <YAxis
+                      yAxisId="total"
+                      orientation="right"
+                      stroke="var(--text-muted)"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}`}
+                      axisLine={false}
+                      tickLine={false}
+                      width={50}
+                    />
+                    <Tooltip
+                      shared={false}
+                      contentStyle={{
+                        backgroundColor: "var(--bg-card)",
+                        border: "1px solid var(--border-default)",
+                        borderRadius: "8px",
+                        boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
+                      }}
+                      formatter={(value, name) => [
+                        value != null ? `$${Number(value).toFixed(2)}` : "",
+                        name,
+                      ]}
+                    />
+                    <Legend
+                      wrapperStyle={{ paddingTop: 12 }}
+                      iconType="circle"
+                      iconSize={8}
+                      formatter={(value) => (
+                        <span className="text-sm text-[var(--text-secondary)]">
+                          {value}
+                        </span>
+                      )}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="total"
+                      name="Total"
+                      yAxisId="total"
+                      fill="url(#totalAreaGradient)"
+                      stroke="none"
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                    {Object.keys(addressMap).map((addrId, i) => {
+                      const label = addressMap[addrId];
+                      return (
+                        <Line
+                          key={addrId}
+                          type="monotone"
+                          dataKey={label}
+                          yAxisId="left"
+                          stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                          strokeWidth={2.5}
+                          dot={{ r: 2 }}
+                          activeDot={{ r: 5, strokeWidth: 2 }}
+                        />
+                      );
+                    })}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </motion.div>
+          ) : (
+            <div className="flex min-h-[280px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/30">
+              <p className="text-[var(--text-muted)]">
+                Add addresses and sync to see the chart
+              </p>
+            </div>
+          )}
         </div>
-      )}
 
-      {showAddForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="w-full max-w-md rounded-lg bg-zinc-900 p-6 shadow-xl">
-            <h2 className="mb-4 text-lg font-semibold">Add Address</h2>
-            <form onSubmit={handleAddAddress} className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm text-zinc-400">
-                  Polymarket profile address (from polymarket.com/profile/0x...)
-                </label>
-                <input
-                  type="text"
-                  value={newAddress}
-                  onChange={(e) => setNewAddress(e.target.value)}
-                  placeholder="0x..."
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 font-mono text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm text-zinc-400">
-                  Label
-                </label>
-                <input
-                  type="text"
-                  value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
-                  placeholder="e.g. Main Account"
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
+        {/* Right: Addresses */}
+        <div className="flex w-full shrink-0 flex-col lg:w-[320px]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-[var(--text-secondary)]">
+              Addresses({kanban.addresses.length})
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (editMode) setToRemove(new Set());
+                  setEditMode((e) => !e);
+                }}
+                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                  editMode
+                    ? "bg-[var(--accent-cyan-dim)] text-[var(--accent-cyan)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                }`}
+              >
+                {editMode ? "Cancel" : "Edit"}
+              </button>
+              <div className="flex rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
                 <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="rounded-lg px-4 py-2 text-zinc-400 hover:text-zinc-100"
+                  onClick={() => setSortMode("default")}
+                  className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                    sortMode === "default"
+                      ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  }`}
                 >
-                  Cancel
+                  Order
                 </button>
                 <button
-                  type="submit"
-                  disabled={submitting || !newAddress.trim() || !newLabel.trim()}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                  onClick={() => setSortMode("amount")}
+                  className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                    sortMode === "amount"
+                      ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  }`}
                 >
-                  {submitting ? "Adding..." : "Add"}
+                  Amount
                 </button>
               </div>
-            </form>
+            </div>
           </div>
+
+          <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+            {kanban.addresses.length === 0 ? (
+              <p className="py-6 text-center text-xs text-[var(--text-muted)]">
+                No addresses yet. Add one to monitor.
+              </p>
+            ) : (
+              <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                <AnimatePresence mode="popLayout">
+                  {sortedAddresses.map((addr, i) => {
+                    const snap = latestByAddress[addr.id];
+                    const totalVal = snap ? parseFloat(snap.totalValue) : 0;
+                    const usdcVal = snap ? parseFloat(snap.usdcBalance) : 0;
+                    const polyVal = snap ? parseFloat(snap.polymarketValue) : 0;
+                    const isLast = i === sortedAddresses.length - 1;
+                    return (
+                      <motion.div
+                        key={addr.id}
+                        layout
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{
+                          duration: 0.2,
+                          delay: i * 0.02,
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
+                        onMouseEnter={() => setHoveredAddrId(addr.id)}
+                        onMouseLeave={() => setHoveredAddrId(null)}
+                        className={`flex items-start justify-between gap-2 px-3 py-2.5 transition-colors hover:bg-[var(--bg-hover)] ${
+                          !isLast ? "border-b border-[var(--border-subtle)]" : ""
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-medium">{addr.label}</p>
+                            <a
+                              href={`https://polymarket.com/profile/${addr.address}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="shrink-0 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-cyan)]"
+                            >
+                              View
+                            </a>
+                          </div>
+                          <p className="font-mono-custom mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                            {addr.address.slice(0, 8)}…{addr.address.slice(-6)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-start gap-2">
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span
+                              className={`font-mono-custom font-medium text-[var(--accent-emerald)] transition-all duration-200 ${
+                                hoveredAddrId === addr.id ? "text-xs" : "text-sm"
+                              }`}
+                            >
+                              ${totalVal.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </span>
+                            <motion.div
+                              initial={false}
+                              animate={{
+                                opacity: hoveredAddrId === addr.id ? 1 : 0,
+                                height: hoveredAddrId === addr.id ? 16 : 0,
+                              }}
+                              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                              className="overflow-hidden text-[10px] leading-tight text-[var(--text-muted)]"
+                            >
+                              onchain: ${usdcVal.toFixed(2)}  position: ${polyVal.toFixed(2)}
+                            </motion.div>
+                          </div>
+                          {editMode && (
+                            <button
+                              onClick={() => toggleRemove(addr.id)}
+                              className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+                                toRemove.has(addr.id)
+                                  ? "bg-[var(--accent-red-dim)] text-[var(--accent-red)]"
+                                  : "text-[var(--text-muted)] hover:bg-[var(--accent-red-dim)] hover:text-[var(--accent-red)]"
+                              }`}
+                            >
+                              {toRemove.has(addr.id) ? "✓" : "×"}
+                            </button>
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+          {editMode && kanban.addresses.length > 0 && (
+            <div className="mt-3 flex justify-end border-t border-[var(--border-subtle)] pt-3">
+              <button
+                onClick={handleBatchRemove}
+                disabled={toRemove.size === 0}
+                className="rounded px-3 py-1.5 text-xs font-medium text-[var(--accent-red)] transition-opacity hover:bg-[var(--accent-red-dim)] disabled:opacity-50"
+              >
+                Remove {toRemove.size > 0 ? toRemove.size : ""} selected
+              </button>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+
+      <AnimatePresence>
+        {showAddForm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowAddForm(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-2xl"
+            >
+              <h2 className="mb-4 font-display text-lg font-semibold">
+                Add Address
+              </h2>
+              <form onSubmit={handleAddAddress} className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-sm text-[var(--text-secondary)]">
+                    Polymarket profile address (from polymarket.com/profile/0x...)
+                  </label>
+                  <input
+                    type="text"
+                    value={newAddress}
+                    onChange={(e) => setNewAddress(e.target.value)}
+                    placeholder="0x..."
+                    className="focus-ring w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-2.5 font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-cyan)] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm text-[var(--text-secondary)]">
+                    Label
+                  </label>
+                  <input
+                    type="text"
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                    placeholder="e.g. Main Account"
+                    className="focus-ring w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-2.5 text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-cyan)] focus:outline-none"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    className="rounded-lg px-4 py-2.5 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      submitting || !newAddress.trim() || !newLabel.trim()
+                    }
+                    className="rounded-lg bg-[var(--accent-cyan)] px-4 py-2.5 text-sm font-semibold text-[var(--bg-base)] transition-opacity disabled:opacity-50"
+                  >
+                    {submitting ? "Adding..." : "Add"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

@@ -3,11 +3,13 @@
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useSignMessage } from "wagmi";
 import { SiweMessage } from "siwe";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { motion } from "motion/react";
+import { Logo } from "./logo";
 
 export function LoginPage() {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const router = useRouter();
 
@@ -51,23 +53,44 @@ export function LoginPage() {
     }
   }, [address, signMessageAsync, router]);
 
-  useEffect(() => {
-    if (isConnected && address) {
-      signIn();
-    }
-  }, [isConnected, address, signIn]);
-
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-zinc-100">
-      <div className="mx-auto max-w-md space-y-8 text-center">
-        <h1 className="text-4xl font-bold tracking-tight">Polymonitor</h1>
-        <p className="text-zinc-400">
-          Monitor your Polymarket account balances and positions. Sign in with
-          your Ethereum wallet.
-        </p>
-        <div className="flex justify-center">
-          <ConnectButton />
-        </div>
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[var(--bg-base)]">
+      <div className="relative z-10 flex flex-col items-center gap-16 px-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col items-center gap-5 text-center"
+        >
+          <Logo className="h-10 w-10 shrink-0 text-[var(--text-primary)] sm:h-12 sm:w-12" />
+          <h1
+            className="font-display text-5xl font-semibold tracking-tight sm:text-6xl md:text-7xl"
+            style={{ fontFamily: "var(--font-sora)" }}
+          >
+            <span className="text-[var(--text-primary)]">Polymonitor</span>
+          </h1>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <ConnectButton.Custom>
+            {({ openConnectModal, mounted, account }) => {
+              const connected = mounted && account;
+
+              return (
+                <button
+                  onClick={connected ? signIn : openConnectModal}
+                  className="group min-w-[180px] rounded-full border border-[var(--border-default)] bg-transparent px-10 py-3.5 text-sm font-medium text-[var(--text-primary)] transition-all duration-300 hover:border-[var(--accent-cyan)] hover:bg-[var(--accent-cyan-dim)]"
+                >
+                  Sign in
+                </button>
+              );
+            }}
+          </ConnectButton.Custom>
+        </motion.div>
       </div>
     </div>
   );

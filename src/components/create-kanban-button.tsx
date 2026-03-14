@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "motion/react";
 
 export function CreateKanbanButton({
   onCreated,
@@ -40,45 +41,64 @@ export function CreateKanbanButton({
 
   return (
     <div>
-      <button
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
         onClick={() => setOpen(true)}
-        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+        className="rounded-xl bg-[var(--accent-cyan)] px-5 py-2.5 text-sm font-semibold text-[var(--bg-base)] shadow-[0_0_24px_-4px_var(--accent-cyan-dim)] transition-colors hover:bg-[#00b8e6]"
       >
         + New Kanban
-      </button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="w-full max-w-sm rounded-lg bg-zinc-900 p-6 shadow-xl">
-            <h2 className="mb-4 text-lg font-semibold">Create Kanban</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Kanban name"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-zinc-100 placeholder-zinc-500 focus:border-emerald-500 focus:outline-none"
-                autoFocus
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  className="rounded-lg px-4 py-2 text-zinc-400 hover:text-zinc-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || !name.trim()}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-                >
-                  {loading ? "Creating..." : "Create"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      </motion.button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-2xl"
+            >
+              <h2 className="mb-4 font-display text-lg font-semibold">
+                Create Kanban
+              </h2>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Kanban name"
+                  className="focus-ring w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-2.5 text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-colors focus:border-[var(--accent-cyan)] focus:outline-none"
+                  autoFocus
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="rounded-lg px-4 py-2.5 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading || !name.trim()}
+                    className="rounded-lg bg-[var(--accent-cyan)] px-4 py-2.5 text-sm font-semibold text-[var(--bg-base)] transition-opacity disabled:opacity-50"
+                  >
+                    {loading ? "Creating..." : "Create"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

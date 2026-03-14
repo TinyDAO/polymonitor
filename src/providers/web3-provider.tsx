@@ -4,6 +4,7 @@ import "@rainbow-me/rainbowkit/styles.css";
 import {
   getDefaultConfig,
   RainbowKitProvider,
+  darkTheme,
 } from "@rainbow-me/rainbowkit";
 import { WagmiProvider } from "wagmi";
 import { mainnet, polygon } from "wagmi/chains";
@@ -22,7 +23,15 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider>{children}</RainbowKitProvider>
+        <RainbowKitProvider
+          theme={darkTheme({
+            accentColor: "#00d4ff",
+            accentColorForeground: "#08090d",
+            borderRadius: "large",
+          })}
+        >
+          {children}
+        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
