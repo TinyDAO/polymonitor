@@ -351,19 +351,16 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
 
       {/* Left-Right Layout: Chart | Addresses */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-6">
-        {/* Left: Chart */}
-        <div className="flex min-h-0 flex-1 flex-col">
+        {/* Left: Chart - no min-h-0 so chart keeps min height on mobile */}
+        <div className="flex flex-1 flex-col">
           {chartData.length > 0 ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="flex min-h-0 flex-1 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 lg:p-5"
+              className="flex flex-1 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 lg:p-5"
             >
-              <h2 className="mb-3 shrink-0 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
-                30 days
-              </h2>
-              <div className="h-[280px] min-h-0 flex-1 sm:h-[320px]">
+              <div className="h-[280px] flex-1 sm:h-[320px]">
                 <Line
                   data={{
                     labels: chartData.map((d) => d.date),
@@ -407,7 +404,7 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
-                    interaction: { mode: "index", intersect: false },
+                    interaction: { mode: "nearest", intersect: false },
                     plugins: {
                       legend: {
                         position: "top",
