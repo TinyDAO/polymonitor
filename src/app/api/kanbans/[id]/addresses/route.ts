@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { getUserIdByWallet } from "@/lib/db/queries";
+import { canAccessKanban } from "@/lib/kanban-auth";
 import { db } from "@/lib/db";
-import { kanbans, monitoredAddresses } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { monitoredAddresses } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { resolveProxyWallet } from "@/lib/polymarket";
 
 const ETH_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
@@ -30,12 +31,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    const [kanban] = await db
-      .select()
-      .from(kanbans)
-      .where(and(eq(kanbans.id, id), eq(kanbans.userId, userId)));
-
-    if (!kanban) {
+    if (!(await canAccessKanban(id, userId))) {
       return NextResponse.json({ error: "Kanban not found" }, { status: 404 });
     }
 
@@ -65,12 +61,7 @@ export async function POST(
     }
 
     const { id } = await params;
-    const [kanban] = await db
-      .select()
-      .from(kanbans)
-      .where(and(eq(kanbans.id, id), eq(kanbans.userId, userId)));
-
-    if (!kanban) {
+    if (!(await canAccessKanban(id, userId))) {
       return NextResponse.json({ error: "Kanban not found" }, { status: 404 });
     }
 

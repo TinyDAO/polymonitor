@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { getUserIdByWallet } from "@/lib/db/queries";
+import { canAccessKanban } from "@/lib/kanban-auth";
 import { db } from "@/lib/db";
-import { kanbans, monitoredAddresses } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { monitoredAddresses } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function DELETE(
   _req: NextRequest,
@@ -23,15 +24,9 @@ export async function DELETE(
         kanbanId: monitoredAddresses.kanbanId,
       })
       .from(monitoredAddresses)
-      .innerJoin(kanbans, eq(monitoredAddresses.kanbanId, kanbans.id))
-      .where(
-        and(
-          eq(monitoredAddresses.id, id),
-          eq(kanbans.userId, userId)
-        )
-      );
+      .where(eq(monitoredAddresses.id, id));
 
-    if (!addr) {
+    if (!addr || !(await canAccessKanban(addr.kanbanId, userId))) {
       return NextResponse.json({ error: "Address not found" }, { status: 404 });
     }
 

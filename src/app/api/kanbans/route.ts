@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { getUserIdByWallet } from "@/lib/db/queries";
+import { getUserIdByWallet, getKanbansForUser } from "@/lib/db/queries";
 import { db } from "@/lib/db";
 import { kanbans } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 
 export async function GET() {
   try {
@@ -13,12 +12,7 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const list = await db
-      .select()
-      .from(kanbans)
-      .where(eq(kanbans.userId, userId))
-      .orderBy(kanbans.createdAt);
-
+    const list = await getKanbansForUser(userId);
     return NextResponse.json(list);
   } catch (err) {
     if ((err as Error).message === "Unauthorized") {

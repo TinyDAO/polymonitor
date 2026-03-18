@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { getUserIdByWallet, getKanbanMembers } from "@/lib/db/queries";
+import {
+  getUserIdByWallet,
+  getKanbanMembersWithCreator,
+} from "@/lib/db/queries";
 import { isKanbanAdmin } from "@/lib/kanban-auth";
 import { db } from "@/lib/db";
 import { kanbans, kanbanMembers } from "@/lib/db/schema";
@@ -22,7 +25,7 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const members = await getKanbanMembers(id);
+    const members = await getKanbanMembersWithCreator(id);
     return NextResponse.json(members);
   } catch (err) {
     if ((err as Error).message === "Unauthorized") {

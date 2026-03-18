@@ -1,4 +1,4 @@
-import { eq, inArray, desc } from "drizzle-orm";
+import { eq, inArray, desc, or, asc } from "drizzle-orm";
 import { db } from "./index";
 import {
   users,
@@ -31,6 +31,25 @@ export async function getKanbanWithAddresses(kanbanId: string) {
   return { ...kanban, addresses: addrs };
 }
 
+export async function getKanbansForUser(userId: string) {
+  const memberKanbanIds = await db
+    .select({ kanbanId: kanbanMembers.kanbanId })
+    .from(kanbanMembers)
+    .where(eq(kanbanMembers.userId, userId));
+  const ids = memberKanbanIds.map((m) => m.kanbanId);
+
+  const rows = await db
+    .select()
+    .from(kanbans)
+    .where(
+      ids.length > 0
+        ? or(eq(kanbans.userId, userId), inArray(kanbans.id, ids))
+        : eq(kanbans.userId, userId)
+    )
+    .orderBy(asc(kanbans.createdAt));
+  return rows;
+}
+
 export async function getKanbanMembers(kanbanId: string) {
   const rows = await db
     .select({
@@ -42,6 +61,34 @@ export async function getKanbanMembers(kanbanId: string) {
     .innerJoin(users, eq(users.id, kanbanMembers.userId))
     .where(eq(kanbanMembers.kanbanId, kanbanId));
   return rows;
+}
+
+export async function getKanbanMembersWithCreator(kanbanId: string) {
+  const [kanban] = await db
+    .select({ userId: kanbans.userId })
+    .from(kanbans)
+    .where(eq(kanbans.id, kanbanId));
+  if (!kanban) return [];
+
+  const [creatorUser] = await db
+    .select({ id: users.id, walletAddress: users.walletAddress })
+    .from(users)
+    .where(eq(users.id, kanban.userId));
+  if (!creatorUser) return [];
+
+  const members = await getKanbanMembers(kanbanId);
+  const creatorRow = {
+    userId: creatorUser.id,
+    role: "admin" as const,
+    walletAddress: creatorUser.walletAddress,
+  };
+  const memberIds = new Set(members.map((m) => m.userId));
+  if (memberIds.has(creatorRow.userId)) {
+    return members.map((m) =>
+      m.userId === creatorRow.userId ? { ...m, role: "admin" as const } : m
+    );
+  }
+  return [creatorRow, ...members];
 }
 
 function toHourKey(d: Date): string {

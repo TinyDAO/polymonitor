@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getUserIdByWallet, getKanbanWithAddresses } from "@/lib/db/queries";
 import { getSession } from "@/lib/auth";
+import { canAccessKanban, isKanbanAdmin } from "@/lib/kanban-auth";
 import { KanbanDetail } from "@/components/kanban-detail";
 
 export default async function KanbanDetailPage({
@@ -16,7 +17,15 @@ export default async function KanbanDetailPage({
 
   const { id } = await params;
   const kanban = await getKanbanWithAddresses(id);
-  if (!kanban || kanban.userId !== userId) notFound();
+  if (!kanban || !(await canAccessKanban(id, userId))) notFound();
 
-  return <KanbanDetail kanban={kanban} />;
+  const isAdmin = await isKanbanAdmin(id, userId);
+  const isCreator = kanban.userId === userId;
+  return (
+    <KanbanDetail
+      kanban={kanban}
+      isAdmin={isAdmin}
+      isCreator={isCreator}
+    />
+  );
 }

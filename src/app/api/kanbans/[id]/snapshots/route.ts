@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { getUserIdByWallet, getKanbanWithAddresses, getSnapshotsForAddresses } from "@/lib/db/queries";
+import { canAccessKanban } from "@/lib/kanban-auth";
 
 export async function GET(
   req: NextRequest,
@@ -15,7 +16,7 @@ export async function GET(
 
     const { id } = await params;
     const kanban = await getKanbanWithAddresses(id);
-    if (!kanban || kanban.userId !== userId) {
+    if (!kanban || !(await canAccessKanban(id, userId))) {
       return NextResponse.json({ error: "Kanban not found" }, { status: 404 });
     }
 

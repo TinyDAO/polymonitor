@@ -74,6 +74,7 @@ type Snapshot = {
 type Kanban = {
   id: string;
   name: string;
+  userId?: string;
   addresses: Address[];
 };
 
@@ -92,7 +93,27 @@ function getChartColor(index: number): string {
   return CHART_COLOR_BASES[base][shade];
 }
 
-export function KanbanDetail({ kanban }: { kanban: Kanban }) {
+type Member = {
+  userId: string;
+  role: string;
+  walletAddress: string;
+};
+
+const INVITE_DURATIONS = [
+  { label: "24 hours", hours: 24 },
+  { label: "3 days", hours: 72 },
+  { label: "7 days", hours: 168 },
+] as const;
+
+export function KanbanDetail({
+  kanban,
+  isAdmin = false,
+  isCreator = false,
+}: {
+  kanban: Kanban;
+  isAdmin?: boolean;
+  isCreator?: boolean;
+}) {
   const router = useRouter();
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +128,14 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
   const [editMode, setEditMode] = useState(false);
   const [toRemove, setToRemove] = useState<Set<string>>(new Set());
   const [hoveredAddrId, setHoveredAddrId] = useState<string | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteDuration, setInviteDuration] = useState(24);
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [inviteCreating, setInviteCreating] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -223,6 +252,78 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
     if (res.ok) window.location.href = "/dashboard";
   }
 
+  async function handleCreateInvite() {
+    setInviteCreating(true);
+    setInviteUrl(null);
+    try {
+      const res = await fetch(`/api/kanbans/${kanban.id}/invitations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiresInHours: inviteDuration }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setInviteUrl(data.url);
+        toast.success("Invite link created");
+      } else {
+        toast.error(data.error || "Failed to create invite");
+      }
+    } catch {
+      toast.error("Failed to create invite");
+    } finally {
+      setInviteCreating(false);
+    }
+  }
+
+  async function handleCopyInvite() {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      toast.success("Link copied to clipboard");
+    } catch {
+      toast.error("Failed to copy");
+    }
+  }
+
+  async function fetchMembers() {
+    setMembersLoading(true);
+    try {
+      const res = await fetch(`/api/kanbans/${kanban.id}/members`);
+      if (res.ok) {
+        const data = await res.json();
+        setMembers(Array.isArray(data) ? data : []);
+      } else {
+        setMembers([]);
+      }
+    } catch {
+      setMembers([]);
+    } finally {
+      setMembersLoading(false);
+    }
+  }
+
+  async function handleRemoveMember(userId: string) {
+    if (!confirm("Remove this member from the board?")) return;
+    setRemovingUserId(userId);
+    try {
+      const res = await fetch(
+        `/api/kanbans/${kanban.id}/members?userId=${encodeURIComponent(userId)}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) {
+        toast.success("Member removed");
+        setMembers((prev) => prev.filter((m) => m.userId !== userId));
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to remove member");
+      }
+    } catch {
+      toast.error("Failed to remove member");
+    } finally {
+      setRemovingUserId(null);
+    }
+  }
+
   const addressMap = Object.fromEntries(
     kanban.addresses.map((a) => [a.id, a.label])
   );
@@ -321,6 +422,32 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
           >
             {refreshing ? "Refreshing..." : "Refresh"}
           </motion.button>
+          {isAdmin && (
+            <>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  setShowInviteModal(true);
+                  setInviteUrl(null);
+                }}
+                className="rounded-lg border border-[var(--border-default)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                Invite
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  setShowMembersModal(true);
+                  fetchMembers();
+                }}
+                className="rounded-lg border border-[var(--border-default)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                Members
+              </motion.button>
+            </>
+          )}
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -351,15 +478,17 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
                   transition={{ duration: 0.15 }}
                   className="absolute right-0 top-full z-50 mt-1.5 min-w-[160px] rounded-lg border border-[var(--border-default)] bg-[var(--bg-card)] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                 >
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      handleDeleteKanban();
-                    }}
-                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-[var(--accent-red)] transition-colors hover:bg-[var(--accent-red-dim)]"
-                  >
-                    Delete Kanban
-                  </button>
+                  {isCreator && (
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false);
+                        handleDeleteKanban();
+                      }}
+                      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-[var(--accent-red)] transition-colors hover:bg-[var(--accent-red-dim)]"
+                    >
+                      Delete Kanban
+                    </button>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -726,6 +855,177 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showInviteModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowInviteModal(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-2xl"
+            >
+              <h2 className="mb-4 font-display text-lg font-semibold">
+                Invite to board
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-sm text-[var(--text-secondary)]">
+                    Link validity
+                  </label>
+                  <div className="flex gap-2">
+                    {INVITE_DURATIONS.map((d) => (
+                      <button
+                        key={d.hours}
+                        type="button"
+                        onClick={() => setInviteDuration(d.hours)}
+                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                          inviteDuration === d.hours
+                            ? "border-[var(--accent-cyan)] bg-[var(--accent-cyan-dim)] text-[var(--accent-cyan)]"
+                            : "border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                        }`}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {inviteUrl ? (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={inviteUrl}
+                        className="focus-ring w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-2.5 font-mono text-[11px] text-[var(--text-primary)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCopyInvite}
+                        className="shrink-0 rounded-lg bg-[var(--accent-cyan)] px-4 py-2.5 text-sm font-semibold text-[var(--bg-base)]"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="text-xs text-[var(--text-muted)]">
+                      Share this link. It expires in{" "}
+                      {INVITE_DURATIONS.find((d) => d.hours === inviteDuration)
+                        ?.label ?? "24 hours"}
+                      .
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCreateInvite}
+                    disabled={inviteCreating}
+                    className="w-full rounded-lg bg-[var(--accent-cyan)] px-4 py-2.5 text-sm font-semibold text-[var(--bg-base)] transition-opacity disabled:opacity-50"
+                  >
+                    {inviteCreating ? "Creating..." : "Generate invite link"}
+                  </button>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowInviteModal(false)}
+                    className="rounded-lg px-4 py-2.5 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                  >
+                    {inviteUrl ? "Done" : "Cancel"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showMembersModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowMembersModal(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-2xl"
+            >
+              <h2 className="mb-4 font-display text-lg font-semibold">
+                Board members
+              </h2>
+              {membersLoading ? (
+                <div className="flex justify-center py-8">
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[var(--accent-cyan)] border-t-transparent" />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {members.map((m) => {
+                    const isCreator = kanban.userId && m.userId === kanban.userId;
+                    const addr = m.walletAddress ?? "";
+                    const shortAddr =
+                      addr.length > 10
+                        ? `${addr.slice(0, 6)}…${addr.slice(-4)}`
+                        : addr;
+                    return (
+                      <div
+                        key={m.userId}
+                        className="flex items-center justify-between rounded-lg border border-[var(--border-subtle)] px-4 py-3"
+                      >
+                        <div>
+                          <span className="font-mono text-sm text-[var(--text-primary)]">
+                            {shortAddr}
+                          </span>
+                          <span className="ml-2 text-xs text-[var(--text-muted)]">
+                            {m.role === "admin" ? "Admin" : "Member"}
+                          </span>
+                        </div>
+                        {!isCreator && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(m.userId)}
+                            disabled={removingUserId === m.userId}
+                            className="rounded px-2 py-1 text-xs font-medium text-[var(--accent-red)] transition-colors hover:bg-[var(--accent-red-dim)] disabled:opacity-50"
+                          >
+                            {removingUserId === m.userId ? "..." : "Remove"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {members.length === 0 && !membersLoading && (
+                    <p className="py-4 text-center text-sm text-[var(--text-muted)]">
+                      No members yet
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowMembersModal(false)}
+                  className="rounded-lg px-4 py-2.5 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                >
+                  Close
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
