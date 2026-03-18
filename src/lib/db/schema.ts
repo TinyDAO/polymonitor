@@ -4,6 +4,7 @@ import {
   timestamp,
   uuid,
   decimal,
+  integer,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -11,6 +12,7 @@ import { relations } from "drizzle-orm";
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   walletAddress: text("wallet_address").notNull().unique(),
+  points: integer("points").notNull().default(100),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -22,6 +24,32 @@ export const kanbans = pgTable("kanbans", {
   name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const kanbanInvitations = pgTable("kanban_invitations", {
+  token: text("token").primaryKey(),
+  kanbanId: uuid("kanban_id")
+    .notNull()
+    .references(() => kanbans.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const kanbanMembers = pgTable(
+  "kanban_members",
+  {
+    kanbanId: uuid("kanban_id")
+      .notNull()
+      .references(() => kanbans.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("kanban_members_kanban_user").on(table.kanbanId, table.userId),
+  ]
+);
 
 export const monitoredAddresses = pgTable(
   "monitored_addresses",
@@ -61,11 +89,26 @@ export const addressSnapshots = pgTable("address_snapshots", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   kanbans: many(kanbans),
+  kanbanMemberships: many(kanbanMembers),
 }));
 
 export const kanbansRelations = relations(kanbans, ({ one, many }) => ({
   user: one(users),
   monitoredAddresses: many(monitoredAddresses),
+  invitations: many(kanbanInvitations),
+  members: many(kanbanMembers),
+}));
+
+export const kanbanInvitationsRelations = relations(
+  kanbanInvitations,
+  ({ one }) => ({
+    kanban: one(kanbans),
+  })
+);
+
+export const kanbanMembersRelations = relations(kanbanMembers, ({ one }) => ({
+  kanban: one(kanbans),
+  user: one(users),
 }));
 
 export const monitoredAddressesRelations = relations(

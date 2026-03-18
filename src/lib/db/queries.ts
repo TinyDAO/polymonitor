@@ -1,6 +1,12 @@
 import { eq, inArray, desc } from "drizzle-orm";
 import { db } from "./index";
-import { users, kanbans, monitoredAddresses, addressSnapshots } from "./schema";
+import {
+  users,
+  kanbans,
+  monitoredAddresses,
+  addressSnapshots,
+  kanbanMembers,
+} from "./schema";
 
 export async function getUserIdByWallet(walletAddress: string) {
   const [user] = await db
@@ -23,6 +29,19 @@ export async function getKanbanWithAddresses(kanbanId: string) {
     .where(eq(monitoredAddresses.kanbanId, kanbanId));
 
   return { ...kanban, addresses: addrs };
+}
+
+export async function getKanbanMembers(kanbanId: string) {
+  const rows = await db
+    .select({
+      userId: kanbanMembers.userId,
+      role: kanbanMembers.role,
+      walletAddress: users.walletAddress,
+    })
+    .from(kanbanMembers)
+    .innerJoin(users, eq(users.id, kanbanMembers.userId))
+    .where(eq(kanbanMembers.kanbanId, kanbanId));
+  return rows;
 }
 
 function toHourKey(d: Date): string {
