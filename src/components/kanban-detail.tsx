@@ -29,6 +29,33 @@ ChartJS.register(
   Legend
 );
 
+// 鼠标 hover 时显示横向虚线参考线
+const horizontalCrosshairPlugin = {
+  id: "horizontalCrosshair",
+  afterDraw(chart: ChartJS) {
+    const ctx = chart.ctx;
+    const active = chart.getActiveElements();
+    if (active.length === 0) return;
+
+    const el = active[0].element as { y?: number };
+    const y = el?.y;
+    if (y == null) return;
+
+    const { left, right } = chart.chartArea ?? {};
+    if (left == null || right == null) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = "rgba(139, 146, 163, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
+    ctx.stroke();
+    ctx.restore();
+  },
+};
+
 type Address = {
   id: string;
   address: string;
@@ -362,6 +389,7 @@ export function KanbanDetail({ kanban }: { kanban: Kanban }) {
             >
               <div className="h-[280px] flex-1 sm:h-[320px]">
                 <Line
+                  plugins={[horizontalCrosshairPlugin]}
                   data={{
                     labels: chartData.map((d) => d.date),
                     datasets: [
