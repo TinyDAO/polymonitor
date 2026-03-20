@@ -101,7 +101,7 @@ function toHourKey(d: Date): string {
  */
 export async function getSnapshotsForAddresses(
   addressIds: string[],
-  limitDays = 30,
+  limitDays = 365,
   options?: { aggregated?: boolean }
 ) {
   if (addressIds.length === 0) return [];
@@ -114,7 +114,7 @@ export async function getSnapshotsForAddresses(
     .from(addressSnapshots)
     .where(inArray(addressSnapshots.addressId, addressIds))
     .orderBy(desc(addressSnapshots.createdAt))
-    .limit(5000);
+    .limit(100000);
 
   const filtered = snapshots.filter((s) => new Date(s.createdAt) >= cutoff);
 

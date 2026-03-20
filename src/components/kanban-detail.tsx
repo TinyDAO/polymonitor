@@ -105,6 +105,24 @@ const INVITE_DURATIONS = [
   { label: "7 days", hours: 168 },
 ] as const;
 
+const CHART_INTERVALS = [
+  { label: "1h", hours: 1 },
+  { label: "4h", hours: 4 },
+  { label: "6h", hours: 6 },
+  { label: "12h", hours: 12 },
+  { label: "24h", hours: 24 },
+] as const;
+
+function getBucketKey(date: Date, intervalHours: number): string {
+  const iso = date.toISOString();
+  const day = iso.slice(0, 10);
+  const hour = date.getUTCHours();
+  if (intervalHours === 24) return day;
+  if (intervalHours === 1) return iso.slice(0, 13);
+  const bucket = Math.floor(hour / intervalHours) * intervalHours;
+  return `${day}T${bucket.toString().padStart(2, "0")}`;
+}
+
 export function KanbanDetail({
   kanban,
   isAdmin = false,
@@ -137,6 +155,7 @@ export function KanbanDetail({
   const [membersLoading, setMembersLoading] = useState(false);
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [chartShowAll, setChartShowAll] = useState(false);
+  const [chartInterval, setChartInterval] = useState(4);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -151,7 +170,7 @@ export function KanbanDetail({
 
   const fetchSnapshots = useCallback(() => {
     setLoading(true);
-    fetch(`/api/kanbans/${kanban.id}/snapshots?days=30`)
+    fetch(`/api/kanbans/${kanban.id}/snapshots?days=365`)
       .then((r) => r.json())
       .then((data) => setSnapshots(Array.isArray(data) ? data : []))
       .catch(() => setSnapshots([]))
@@ -362,35 +381,39 @@ export function KanbanDetail({
     0
   );
 
-  const byHour = snapshots
+  const byBucket = snapshots
     .sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )
     .reduce<Record<string, Record<string, number>>>((acc, s) => {
-      const d = new Date(s.createdAt).toISOString().slice(0, 13);
-      if (!acc[d]) acc[d] = {};
+      const key = getBucketKey(new Date(s.createdAt), chartInterval);
+      if (!acc[key]) acc[key] = {};
       const label = addressMap[s.addressId] || s.addressId.slice(0, 8);
-      if (!(label in acc[d])) acc[d][label] = parseFloat(s.totalValue);
+      if (!(label in acc[key])) acc[key][label] = parseFloat(s.totalValue);
       return acc;
     }, {});
 
-  const chartData = Object.entries(byHour)
+  const chartData = Object.entries(byBucket)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([hour, values]) => {
-      const d = new Date(hour + ":00:00Z");
+    .map(([bucketKey, values]) => {
       const total = Object.values(values).reduce((s, v) => s + v, 0);
       return {
-        date: d.toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-        }),
-        sortKey: hour,
+        sortKey: bucketKey,
         total,
         ...values,
       };
     });
+
+  const chartLabels = useMemo(() => {
+    const seen = new Set<string>();
+    return chartData.map((d) => {
+      const dateStr = d.sortKey.slice(0, 10);
+      if (seen.has(dateStr)) return "";
+      seen.add(dateStr);
+      return dateStr;
+    });
+  }, [chartData]);
 
   return (
     <motion.div
@@ -517,7 +540,23 @@ export function KanbanDetail({
               transition={{ duration: 0.4, delay: 0.1 }}
               className="flex flex-1 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 lg:p-5"
             >
-              <div className="mb-2 flex items-center justify-end">
+              <div className="mb-2 flex items-center justify-end gap-2">
+                <div className="flex rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
+                  {CHART_INTERVALS.map(({ label, hours }) => (
+                    <button
+                      key={hours}
+                      type="button"
+                      onClick={() => setChartInterval(hours)}
+                      className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                        chartInterval === hours
+                          ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                          : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
                   onClick={() => setChartShowAll((v) => !v)}
@@ -554,11 +593,11 @@ export function KanbanDetail({
                   )}
                 </button>
               </div>
-              <div className="h-[280px] flex-1 sm:h-[320px]">
+              <div className="h-[60vh] flex-1 sm:h-[320px]">
                 <Line
                   plugins={[horizontalCrosshairPlugin]}
                   data={{
-                    labels: chartData.map((d) => d.date),
+                    labels: chartLabels,
                     datasets: [
                       {
                         label: "Total",
@@ -624,6 +663,13 @@ export function KanbanDetail({
                         caretPadding: 16,
                         yAlign: "bottom",
                         callbacks: {
+                          title: (items) => {
+                            const idx = items[0]?.dataIndex;
+                            if (idx == null || !chartData[idx]) return "";
+                            const k = chartData[idx].sortKey;
+                            if (k.length <= 10) return k;
+                            return `${k.slice(0, 10)} ${k.slice(11, 13)}:00`;
+                          },
                           label: (ctx) =>
                             ctx.parsed.y != null
                               ? `${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(2)}`
@@ -678,7 +724,7 @@ export function KanbanDetail({
               </div>
             </motion.div>
           ) : (
-            <div className="flex min-h-[280px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/30">
+            <div className="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/30 sm:min-h-[280px]">
               <p className="text-[var(--text-muted)]">
                 Add addresses and sync to see the chart
               </p>
