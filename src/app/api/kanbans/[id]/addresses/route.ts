@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { getUserIdByWallet } from "@/lib/db/queries";
-import { canAccessKanban } from "@/lib/kanban-auth";
+import { canAccessKanban, isKanbanAdmin } from "@/lib/kanban-auth";
 import { db } from "@/lib/db";
 import { monitoredAddresses } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -63,6 +63,9 @@ export async function POST(
     const { id } = await params;
     if (!(await canAccessKanban(id, userId))) {
       return NextResponse.json({ error: "Kanban not found" }, { status: 404 });
+    }
+    if (!(await isKanbanAdmin(id, userId))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await req.json();

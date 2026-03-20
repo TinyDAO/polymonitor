@@ -176,6 +176,13 @@ export function KanbanDetail({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin) {
+      setEditMode(false);
+      setToRemove(new Set());
+    }
+  }, [isAdmin]);
+
   const fetchSnapshots = useCallback(() => {
     setLoading(true);
     fetch(`/api/kanbans/${kanban.id}/snapshots?days=365`)
@@ -595,14 +602,16 @@ export function KanbanDetail({
               </motion.button>
             </>
           )}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setShowAddForm(true)}
-            className="rounded-lg bg-[var(--accent-cyan)] px-4 py-2 text-sm font-semibold text-[var(--bg-base)]"
-          >
-            + Add Address
-          </motion.button>
+          {isAdmin && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowAddForm(true)}
+              className="rounded-lg bg-[var(--accent-cyan)] px-4 py-2 text-sm font-semibold text-[var(--bg-base)]"
+            >
+              + Add Address
+            </motion.button>
+          )}
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((o) => !o)}
@@ -768,7 +777,9 @@ export function KanbanDetail({
           ) : (
             <div className="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/30 sm:min-h-[440px] lg:min-h-[480px]">
               <p className="text-[var(--text-muted)]">
-                Add addresses and sync to see the chart
+                {isAdmin
+                  ? "Add addresses and sync to see the chart"
+                  : "No chart data yet. Ask a board admin to add addresses."}
               </p>
             </div>
           )}
@@ -781,19 +792,21 @@ export function KanbanDetail({
               Addresses({kanban.addresses.length})
             </h2>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  if (editMode) setToRemove(new Set());
-                  setEditMode((e) => !e);
-                }}
-                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
-                  editMode
-                    ? "bg-[var(--accent-cyan-dim)] text-[var(--accent-cyan)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                }`}
-              >
-                {editMode ? "Cancel" : "Edit"}
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    if (editMode) setToRemove(new Set());
+                    setEditMode((e) => !e);
+                  }}
+                  className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                    editMode
+                      ? "bg-[var(--accent-cyan-dim)] text-[var(--accent-cyan)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {editMode ? "Cancel" : "Edit"}
+                </button>
+              )}
               <div className="flex rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
                 <button
                   onClick={() => setSortMode("default")}
@@ -822,7 +835,9 @@ export function KanbanDetail({
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
             {kanban.addresses.length === 0 ? (
               <p className="py-6 text-center text-xs text-[var(--text-muted)]">
-                No addresses yet. Add one to monitor.
+                {isAdmin
+                  ? "No addresses yet. Add one to monitor."
+                  : "No addresses yet."}
               </p>
             ) : (
               <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)]">
