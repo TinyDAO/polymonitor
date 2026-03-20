@@ -136,6 +136,7 @@ export function KanbanDetail({
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+  const [chartShowAll, setChartShowAll] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -516,6 +517,43 @@ export function KanbanDetail({
               transition={{ duration: 0.4, delay: 0.1 }}
               className="flex flex-1 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 lg:p-5"
             >
+              <div className="mb-2 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setChartShowAll((v) => !v)}
+                  title={chartShowAll ? "仅Total" : "全部显示"}
+                  aria-label={chartShowAll ? "仅Total" : "全部显示"}
+                  className="rounded p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                >
+                  {chartShowAll ? (
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    >
+                      <line x1="2" y1="8" x2="14" y2="8" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    >
+                      <line x1="2" y1="4" x2="14" y2="4" />
+                      <line x1="2" y1="8" x2="14" y2="8" />
+                      <line x1="2" y1="12" x2="14" y2="12" />
+                    </svg>
+                  )}
+                </button>
+              </div>
               <div className="h-[280px] flex-1 sm:h-[320px]">
                 <Line
                   plugins={[horizontalCrosshairPlugin]}
@@ -530,8 +568,10 @@ export function KanbanDetail({
                         borderColor: "transparent",
                         borderWidth: 0,
                         pointRadius: 0,
-                        pointHoverRadius: 0,
-                        pointBackgroundColor: "rgba(94, 234, 212, 0.5)",
+                        pointHoverRadius: 6,
+                        pointHoverBorderWidth: 2,
+                        pointBackgroundColor: "rgba(94, 234, 212, 0.9)",
+                        pointBorderColor: "rgba(94, 234, 212, 1)",
                         pointBorderWidth: 0,
                         yAxisID: "y1",
                       },
@@ -554,6 +594,7 @@ export function KanbanDetail({
                           pointBorderWidth: 0,
                           tension: 0.3,
                           yAxisID: "y",
+                          hidden: !chartShowAll,
                         };
                       }),
                     ],
@@ -580,6 +621,8 @@ export function KanbanDetail({
                         borderWidth: 1,
                         padding: 12,
                         cornerRadius: 8,
+                        caretPadding: 16,
+                        yAlign: "bottom",
                         callbacks: {
                           label: (ctx) =>
                             ctx.parsed.y != null
