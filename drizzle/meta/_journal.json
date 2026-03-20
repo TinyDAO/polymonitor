@@ -8,6 +8,13 @@
       "when": 1773487801278,
       "tag": "0000_talented_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774016992922,
+      "tag": "0001_users_points",
+      "breakpoints": true
     }
   ]
 }
