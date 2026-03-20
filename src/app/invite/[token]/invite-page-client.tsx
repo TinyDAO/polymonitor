@@ -27,30 +27,45 @@ export function InvitePageClient({ token, loggedIn }: InvitePageClientProps) {
   const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [invitation, setInvitation] = useState<Invitation | null>(null);
-  const [loading, setLoading] = useState(loggedIn);
+  const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<"expired" | "not_found" | null>(
+    null
+  );
 
   const fetchInvitation = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setErrorCode(null);
+    setInvitation(null);
     const res = await fetch(`/api/invitations/${token}`);
     if (res.ok) {
       const data = await res.json();
       setInvitation(data);
     } else {
-      const err = await res.json();
+      let err: { error?: string; code?: string } = {};
+      try {
+        err = await res.json();
+      } catch {
+        /* ignore */
+      }
+      if (res.status === 410 || err.code === "expired") {
+        setErrorCode("expired");
+      } else if (res.status === 404 || err.code === "not_found") {
+        setErrorCode("not_found");
+      } else {
+        setErrorCode(null);
+      }
       setError(err.error || "Invitation not found");
     }
     setLoading(false);
   }, [token]);
 
   useEffect(() => {
-    if (loggedIn) {
-      fetchInvitation();
-    } else {
-      setLoading(false);
-    }
-  }, [loggedIn, fetchInvitation]);
+    fetchInvitation();
+  }, [fetchInvitation]);
 
   const signIn = useCallback(async () => {
     if (!address) return;
@@ -189,17 +204,35 @@ export function InvitePageClient({ token, loggedIn }: InvitePageClientProps) {
   }
 
   if (error || !invitation) {
+    const title =
+      errorCode === "expired"
+        ? "邀请链接已过期"
+        : errorCode === "not_found"
+          ? "邀请无效或已失效"
+          : "无法打开邀请";
+    const description =
+      errorCode === "expired"
+        ? "该链接已超过有效期，请让看板管理员重新生成邀请链接。"
+        : errorCode === "not_found"
+          ? "链接可能已使用、已撤销或不存在，请向管理员索取新的邀请。"
+          : error || "请稍后重试或联系管理员。";
     return (
       <div className="relative flex min-h-screen flex-col items-center justify-center bg-[var(--bg-base)]">
-        <div className="flex flex-col items-center gap-6 px-6 text-center">
-          <h1 className="font-display text-2xl font-semibold text-[var(--text-primary)]">
-            {error || "Invitation not found"}
-          </h1>
+        <div className="relative z-10 flex max-w-md flex-col items-center gap-6 px-6 text-center">
+          <Logo className="h-10 w-10 shrink-0 text-[var(--text-primary)]" />
+          <div>
+            <h1 className="font-display text-2xl font-semibold text-[var(--text-primary)]">
+              {title}
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
+              {description}
+            </p>
+          </div>
           <Link
             href="/dashboard"
             className="rounded-full border border-[var(--border-default)] px-6 py-2.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:border-[var(--accent-cyan)] hover:bg-[var(--accent-cyan-dim)]"
           >
-            Go to Dashboard
+            返回首页
           </Link>
         </div>
       </div>

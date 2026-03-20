@@ -15,6 +15,7 @@ import {
   Title,
   Tooltip as ChartTooltip,
   Legend,
+  type ChartOptions,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 
@@ -113,14 +114,21 @@ const CHART_INTERVALS = [
   { label: "24h", hours: 24 },
 ] as const;
 
+function pad2(n: number): string {
+  return n.toString().padStart(2, "0");
+}
+
+/** 分桶与 X 轴日期均按本地时区（非 UTC） */
 function getBucketKey(date: Date, intervalHours: number): string {
-  const iso = date.toISOString();
-  const day = iso.slice(0, 10);
-  const hour = date.getUTCHours();
-  if (intervalHours === 24) return day;
-  if (intervalHours === 1) return iso.slice(0, 13);
+  const y = date.getFullYear();
+  const m = pad2(date.getMonth() + 1);
+  const day = pad2(date.getDate());
+  const dayStr = `${y}-${m}-${day}`;
+  const hour = date.getHours();
+  if (intervalHours === 24) return dayStr;
+  if (intervalHours === 1) return `${dayStr}T${pad2(hour)}`;
   const bucket = Math.floor(hour / intervalHours) * intervalHours;
-  return `${day}T${bucket.toString().padStart(2, "0")}`;
+  return `${dayStr}T${pad2(bucket)}`;
 }
 
 export function KanbanDetail({
@@ -405,15 +413,130 @@ export function KanbanDetail({
       };
     });
 
-  const chartLabels = useMemo(() => {
-    const seen = new Set<string>();
+  /** 每天只显示 1 个日期：按时间排序后，当天「第一个有数据的桶」上显示 yyyy-mm-dd（不要求是 T00） */
+  const chartAxisDates = useMemo(() => {
+    const seenDay = new Set<string>();
     return chartData.map((d) => {
-      const dateStr = d.sortKey.slice(0, 10);
-      if (seen.has(dateStr)) return "";
-      seen.add(dateStr);
-      return dateStr;
+      const day = d.sortKey.slice(0, 10);
+      if (seenDay.has(day)) return "";
+      seenDay.add(day);
+      return day;
     });
   }, [chartData]);
+
+  /** 无日期的位置用「·」占位，让 X 轴上仍保留刻度感（空字符串时 Chart 往往不画刻度） */
+  const chartXLabels = useMemo(
+    () => chartAxisDates.map((t) => t || "·"),
+    [chartAxisDates]
+  );
+
+  const lineChartOptions = useMemo<ChartOptions<"line">>(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "nearest" as const, intersect: false },
+      plugins: {
+        legend: {
+          position: "top" as const,
+          labels: {
+            font: { size: 12 },
+            color: "#8b92a3",
+            usePointStyle: true,
+            pointStyle: "circle" as const,
+          },
+        },
+        tooltip: {
+          backgroundColor: "#13171f",
+          titleColor: "#f4f5f7",
+          bodyColor: "#8b92a3",
+          borderColor: "rgba(255,255,255,0.1)",
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8,
+          caretPadding: 16,
+          yAlign: "bottom" as const,
+          callbacks: {
+            title: (items: { dataIndex?: number }[]) => {
+              const idx = items[0]?.dataIndex;
+              if (idx == null || !chartData[idx]) return "";
+              const k = chartData[idx].sortKey;
+              if (k.length <= 10) {
+                const d = new Date(`${k}T12:00:00`);
+                return Number.isNaN(d.getTime()) ? k : d.toLocaleDateString();
+              }
+              const d = new Date(`${k.slice(0, 10)}T${k.slice(11, 13)}:00:00`);
+              return Number.isNaN(d.getTime())
+                ? k
+                : d.toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  });
+            },
+            label: (ctx: { parsed: { y: number | null }; dataset: { label?: string } }) =>
+              ctx.parsed.y != null
+                ? `${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(2)}`
+                : "",
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: "category" as const,
+          grid: {
+            display: true,
+            color: "rgba(255,255,255,0.04)",
+            tickLength: 0,
+          },
+          border: {
+            display: true,
+            color: "rgba(255,255,255,0.08)",
+          },
+          ticks: {
+            color: "#5c6478",
+            font: { size: 9 },
+            maxRotation: 45,
+            minRotation: 0,
+            autoSkip: false,
+            tickLength: 5,
+            tickWidth: 1,
+          },
+        },
+        y: {
+          position: "left" as const,
+          grid: {
+            color: "rgba(255,255,255,0.06)",
+            drawTicks: false,
+          },
+          ticks: {
+            color: "#5c6478",
+            font: { size: 11 },
+            callback: (v: string | number) =>
+              typeof v === "number"
+                ? v >= 1000
+                  ? `$${(v / 1000).toFixed(1)}k`
+                  : `$${v}`
+                : v,
+          },
+        },
+        y1: {
+          position: "right" as const,
+          grid: { drawOnChartArea: false },
+          ticks: {
+            color: "#5c6478",
+            font: { size: 11 },
+            callback: (v: string | number) =>
+              typeof v === "number"
+                ? v >= 1000
+                  ? `$${(v / 1000).toFixed(1)}k`
+                  : `$${v}`
+                : v,
+          },
+        },
+      },
+      animation: false,
+    }),
+    [chartAxisDates, chartData]
+  );
 
   return (
     <motion.div
@@ -593,11 +716,11 @@ export function KanbanDetail({
                   )}
                 </button>
               </div>
-              <div className="h-[60vh] flex-1 sm:h-[320px]">
+              <div className="h-[60vh] flex-1 sm:h-[440px] lg:h-[480px]">
                 <Line
                   plugins={[horizontalCrosshairPlugin]}
                   data={{
-                    labels: chartLabels,
+                    labels: chartXLabels,
                     datasets: [
                       {
                         label: "Total",
@@ -638,93 +761,12 @@ export function KanbanDetail({
                       }),
                     ],
                   }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: "nearest", intersect: false },
-                    plugins: {
-                      legend: {
-                        position: "top",
-                        labels: {
-                          font: { size: 12 },
-                          color: "#8b92a3",
-                          usePointStyle: true,
-                          pointStyle: "circle",
-                        },
-                      },
-                      tooltip: {
-                        backgroundColor: "#13171f",
-                        titleColor: "#f4f5f7",
-                        bodyColor: "#8b92a3",
-                        borderColor: "rgba(255,255,255,0.1)",
-                        borderWidth: 1,
-                        padding: 12,
-                        cornerRadius: 8,
-                        caretPadding: 16,
-                        yAlign: "bottom",
-                        callbacks: {
-                          title: (items) => {
-                            const idx = items[0]?.dataIndex;
-                            if (idx == null || !chartData[idx]) return "";
-                            const k = chartData[idx].sortKey;
-                            if (k.length <= 10) return k;
-                            return `${k.slice(0, 10)} ${k.slice(11, 13)}:00`;
-                          },
-                          label: (ctx) =>
-                            ctx.parsed.y != null
-                              ? `${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(2)}`
-                              : "",
-                        },
-                      },
-                    },
-                    scales: {
-                      x: {
-                        grid: { display: false },
-                        ticks: {
-                          color: "#5c6478",
-                          font: { size: 11 },
-                          maxRotation: 0,
-                        },
-                      },
-                      y: {
-                        position: "left",
-                        grid: {
-                          color: "rgba(255,255,255,0.06)",
-                          drawTicks: false,
-                        },
-                        ticks: {
-                          color: "#5c6478",
-                          font: { size: 11 },
-                          callback: (v) =>
-                            typeof v === "number"
-                              ? v >= 1000
-                                ? `$${(v / 1000).toFixed(1)}k`
-                                : `$${v}`
-                              : v,
-                        },
-                      },
-                      y1: {
-                        position: "right",
-                        grid: { drawOnChartArea: false },
-                        ticks: {
-                          color: "#5c6478",
-                          font: { size: 11 },
-                          callback: (v) =>
-                            typeof v === "number"
-                              ? v >= 1000
-                                ? `$${(v / 1000).toFixed(1)}k`
-                                : `$${v}`
-                              : v,
-                        },
-                      },
-                    },
-                    animation: false,
-                  }}
+                  options={lineChartOptions}
                 />
               </div>
             </motion.div>
           ) : (
-            <div className="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/30 sm:min-h-[280px]">
+            <div className="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/30 sm:min-h-[440px] lg:min-h-[480px]">
               <p className="text-[var(--text-muted)]">
                 Add addresses and sync to see the chart
               </p>
