@@ -474,6 +474,14 @@ export function KanbanDetail({
           >
             {refreshing ? "Refreshing..." : "Refresh"}
           </motion.button>
+          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <Link
+              href={`/dashboard/kanbans/${kanban.id}/analytics`}
+              className="inline-block rounded-lg border border-[var(--border-default)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              Analytics
+            </Link>
+          </motion.div>
           {isAdmin && (
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Link
@@ -570,7 +578,7 @@ export function KanbanDetail({
                   )}
                 </button>
               </div>
-              <div className="h-[60vh] flex-1 sm:h-[440px] lg:h-[480px]">
+              <div className="h-[72vh] min-h-[380px] flex-1 sm:h-[440px] lg:h-[480px]">
                 <Line
                   plugins={[horizontalCrosshairPlugin]}
                   data={{
@@ -620,7 +628,7 @@ export function KanbanDetail({
               </div>
             </motion.div>
           ) : (
-            <div className="flex min-h-[60vh] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/30 sm:min-h-[440px] lg:min-h-[480px]">
+            <div className="flex h-[72vh] min-h-[380px] flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/30 sm:h-[440px] sm:min-h-0 lg:h-[480px]">
               <p className="text-[var(--text-muted)]">
                 {isAdmin
                   ? "Add addresses and sync to see the chart"
