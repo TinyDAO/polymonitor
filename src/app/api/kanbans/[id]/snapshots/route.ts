@@ -20,7 +20,7 @@ export async function GET(
       return NextResponse.json({ error: "Kanban not found" }, { status: 404 });
     }
 
-    const days = parseInt(req.nextUrl.searchParams.get("days") ?? "365", 10);
+    const days = parseInt(req.nextUrl.searchParams.get("days") ?? "14", 10);
     const limitDays = Math.min(Math.max(days, 1), 365);
     const aggregated =
       req.nextUrl.searchParams.get("aggregated") !== "false";

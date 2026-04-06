@@ -33,7 +33,13 @@ function bucketKeyLocal(date: Date, intervalHours: number): string {
 }
 
 function formatBucketLabel(k: string, intervalHours: number): string {
-  if (intervalHours === 1 && k.length > 10) {
+  if (intervalHours === 24) {
+    const d = new Date(`${k}T12:00:00`);
+    return Number.isNaN(d.getTime())
+      ? k
+      : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  if (k.length > 10 && k.includes("T")) {
     const d = new Date(`${k.slice(0, 10)}T${k.slice(11, 13)}:00:00`);
     return Number.isNaN(d.getTime())
       ? k
@@ -51,23 +57,27 @@ function formatBucketLabel(k: string, intervalHours: number): string {
 
 type BucketMap = Map<string, Map<string, SnapshotRow>>;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
  * One snapshot per (bucket, address): latest in that bucket.
  * Used by board total series.
  */
 function aggregateBuckets(
   snapshots: SnapshotRow[],
-  period: PeriodId,
-  endTime: Date
+  opts: {
+    lookbackDays: number;
+    intervalHours: number;
+    endTime: Date;
+  }
 ): {
   intervalHours: number;
   keys: string[];
   labels: string[];
   bucketMap: BucketMap;
 } {
-  const periodMs = PERIOD_MS[period];
-  const start = new Date(endTime.getTime() - periodMs);
-  const intervalHours = period === "24h" ? 1 : 24;
+  const { lookbackDays, intervalHours, endTime } = opts;
+  const start = new Date(endTime.getTime() - lookbackDays * DAY_MS);
 
   const inWindow = snapshots.filter((s) => {
     const t = new Date(s.createdAt).getTime();
@@ -215,14 +225,15 @@ export function computeMetricsForPeriod(
 /** Sum of totalValue per time bucket for portfolio trend in the window */
 export function buildTotalSeries(
   snapshots: SnapshotRow[],
-  period: PeriodId,
+  lookbackDays: number,
+  intervalHours: number,
   endTime: Date = new Date()
 ): { labels: string[]; values: number[] } {
-  const { keys, labels, bucketMap } = aggregateBuckets(
-    snapshots,
-    period,
-    endTime
-  );
+  const { keys, labels, bucketMap } = aggregateBuckets(snapshots, {
+    lookbackDays,
+    intervalHours,
+    endTime,
+  });
 
   const values = keys.map((key) => {
     const perAddr = bucketMap.get(key);
@@ -289,9 +300,10 @@ function sampleStd(arr: number[]): number | null {
   return Math.sqrt(v);
 }
 
-/** Aligns with buildTotalSeries: 24h → hourly buckets, else daily */
-function annualizationFactor(period: PeriodId): number {
-  return period === "24h" ? Math.sqrt(365 * 24) : Math.sqrt(365);
+/** Periods per year implied by bucket width `intervalHours` (e.g. 1h → 365×24) */
+export function annualizationFactorFromBucketHours(intervalHours: number): number {
+  if (intervalHours <= 0) return Math.sqrt(365);
+  return Math.sqrt((365 * 24) / intervalHours);
 }
 
 /**
@@ -300,7 +312,7 @@ function annualizationFactor(period: PeriodId): number {
  */
 export function computeRiskMetricsFromSeries(
   values: number[],
-  period: PeriodId
+  intervalHours: number
 ): RiskMetricsFromSeries {
   const returns = bucketReturns(values);
   if (returns.length === 0) {
@@ -315,7 +327,7 @@ export function computeRiskMetricsFromSeries(
   const winRatePct = (wins / returns.length) * 100;
 
   const std = sampleStd(returns);
-  const ann = annualizationFactor(period);
+  const ann = annualizationFactorFromBucketHours(intervalHours);
 
   if (std == null) {
     return {

@@ -23,6 +23,14 @@ import {
   computeMaxDrawdownPct,
   computeRiskMetricsFromSeries,
 } from "@/lib/kanban-analytics-metrics";
+import {
+  type SnapshotRangeId,
+  SNAPSHOT_RANGE_DAYS,
+  SNAPSHOT_RANGE_LABEL,
+  SNAPSHOT_RANGE_ORDER,
+  allowedBucketHours,
+  defaultBucketHours,
+} from "@/lib/snapshot-range";
 
 ChartJS.register(
   CategoryScale,
@@ -82,6 +90,10 @@ function formatVolAnnualPct(n: number | null | undefined): string {
   return `${n.toFixed(2)}%`;
 }
 
+function bucketHourLabel(hours: number): string {
+  return hours === 24 ? "1d" : `${hours}h`;
+}
+
 function deltaColor(delta: number | null): string {
   if (delta == null) return "text-[var(--text-secondary)]";
   if (delta > 0) return "text-[var(--accent-emerald)]";
@@ -101,17 +113,29 @@ export function KanbanAnalytics({
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodId>("7d");
+  const [snapshotRange, setSnapshotRange] = useState<SnapshotRangeId>("14d");
+  const [bucketHours, setBucketHours] = useState(() =>
+    defaultBucketHours("14d")
+  );
   const [sortKey, setSortKey] = useState<SortKey>("delta");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
+  useEffect(() => {
+    setBucketHours(defaultBucketHours(snapshotRange));
+  }, [snapshotRange]);
+
+  const rangeDays = SNAPSHOT_RANGE_DAYS[snapshotRange];
+
   const fetchSnapshots = useCallback(() => {
     setLoading(true);
-    fetch(`/api/kanbans/${kanbanId}/snapshots?days=90&aggregated=true`)
+    fetch(
+      `/api/kanbans/${kanbanId}/snapshots?days=${rangeDays}&aggregated=true`
+    )
       .then((r) => r.json())
       .then((data) => setSnapshots(Array.isArray(data) ? data : []))
       .catch(() => setSnapshots([]))
       .finally(() => setLoading(false));
-  }, [kanbanId]);
+  }, [kanbanId, rangeDays]);
 
   useEffect(() => {
     fetchSnapshots();
@@ -123,8 +147,8 @@ export function KanbanAnalytics({
   );
 
   const series = useMemo(
-    () => buildTotalSeries(snapshots, period),
-    [snapshots, period]
+    () => buildTotalSeries(snapshots, rangeDays, bucketHours),
+    [snapshots, rangeDays, bucketHours]
   );
 
   const maxDrawdownPct = useMemo(
@@ -133,8 +157,8 @@ export function KanbanAnalytics({
   );
 
   const riskMetrics = useMemo(
-    () => computeRiskMetricsFromSeries(series.values, period),
-    [series.values, period]
+    () => computeRiskMetricsFromSeries(series.values, bucketHours),
+    [series.values, bucketHours]
   );
 
   const sortedRows = useMemo(() => {
@@ -259,22 +283,67 @@ export function KanbanAnalytics({
           </h1>
           <span className="text-sm text-[var(--text-muted)]">Analytics</span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <div className="flex rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
-            {PERIODS.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setPeriod(id)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  period === id
-                    ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+        <div className="flex max-w-full flex-col gap-2 sm:items-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+              Change
+            </span>
+            <div className="flex rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
+              {PERIODS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPeriod(id)}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:text-sm ${
+                    period === id
+                      ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+              History
+            </span>
+            <div className="flex rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
+              {SNAPSHOT_RANGE_ORDER.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSnapshotRange(id)}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:text-sm ${
+                    snapshotRange === id
+                      ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {SNAPSHOT_RANGE_LABEL[id]}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+              Buckets
+            </span>
+            <div className="flex flex-wrap rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
+              {allowedBucketHours(snapshotRange).map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setBucketHours(h)}
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:text-sm ${
+                    bucketHours === h
+                      ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {bucketHourLabel(h)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -323,7 +392,8 @@ export function KanbanAnalytics({
             <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
               <p className="text-xs text-[var(--text-muted)]">Max drawdown</p>
               <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">
-                Board total series · {period}
+                Series · {SNAPSHOT_RANGE_LABEL[snapshotRange]} ·{" "}
+                {bucketHourLabel(bucketHours)} buckets
               </p>
               <p className="mt-1 font-mono-custom text-lg font-semibold text-[var(--accent-red)]">
                 {formatDrawdownPct(maxDrawdownPct)}
@@ -391,18 +461,19 @@ export function KanbanAnalytics({
               </div>
             </div>
             <p className="mt-2 text-[10px] leading-relaxed text-[var(--text-muted)]">
-              From adjacent bucket returns on board total. 24h uses hourly buckets (√(365×24));
-              7d/30d use daily buckets (√365). Sparse syncs — for reference only.
+              Annualization factor √(365×24/h) with bucket width h = {bucketHours}h. From adjacent
+              bucket returns on loaded board total. Sparse syncs — for reference only.
             </p>
           </div>
 
           <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 lg:p-5">
             <h2 className="text-sm font-medium text-[var(--text-secondary)]">
-              Board total over time ({period})
+              Board total · {SNAPSHOT_RANGE_LABEL[snapshotRange]} ·{" "}
+              {bucketHourLabel(bucketHours)} buckets
             </h2>
             <p className="mb-3 mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
-              Sum of all monitored addresses on this board (same as Total on the board page). The
-              Y-axis uses k for thousands (e.g. 1.5k = $1,500).
+              Last {rangeDays} days loaded. Sum of all monitored addresses (same as Total on the
+              board page). Y-axis uses k for thousands (e.g. 1.5k = $1,500).
             </p>
             {hasChartPoints ? (
               <div className="h-[220px] sm:h-[260px]">

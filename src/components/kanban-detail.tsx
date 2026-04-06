@@ -18,6 +18,14 @@ import {
   type ChartOptions,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
+import {
+  type SnapshotRangeId,
+  SNAPSHOT_RANGE_DAYS,
+  SNAPSHOT_RANGE_LABEL,
+  SNAPSHOT_RANGE_ORDER,
+  allowedBucketHours,
+  defaultBucketHours,
+} from "@/lib/snapshot-range";
 
 ChartJS.register(
   CategoryScale,
@@ -140,7 +148,15 @@ export function KanbanDetail({
   const [toRemove, setToRemove] = useState<Set<string>>(new Set());
   const [hoveredAddrId, setHoveredAddrId] = useState<string | null>(null);
   const [chartShowAll, setChartShowAll] = useState(false);
-  const [chartInterval, setChartInterval] = useState(4);
+  const [snapshotRange, setSnapshotRange] = useState<SnapshotRangeId>("14d");
+  const [chartInterval, setChartInterval] = useState(() =>
+    defaultBucketHours("14d")
+  );
+
+  useEffect(() => {
+    setChartInterval(defaultBucketHours(snapshotRange));
+  }, [snapshotRange]);
+
   useEffect(() => {
     if (!isAdmin) {
       setEditMode(false);
@@ -148,17 +164,21 @@ export function KanbanDetail({
     }
   }, [isAdmin]);
 
+  const snapshotDays = SNAPSHOT_RANGE_DAYS[snapshotRange];
+
   const fetchSnapshots = useCallback((opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
     if (!silent) setLoading(true);
-    fetch(`/api/kanbans/${kanban.id}/snapshots?days=365`)
+    fetch(
+      `/api/kanbans/${kanban.id}/snapshots?days=${snapshotDays}&aggregated=true`
+    )
       .then((r) => r.json())
       .then((data) => setSnapshots(Array.isArray(data) ? data : []))
       .catch(() => setSnapshots([]))
       .finally(() => {
         if (!silent) setLoading(false);
       });
-  }, [kanban.id]);
+  }, [kanban.id, snapshotDays]);
 
   useEffect(() => {
     fetchSnapshots();
@@ -525,23 +545,50 @@ export function KanbanDetail({
               transition={{ duration: 0.4, delay: 0.1 }}
               className="flex flex-1 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 lg:p-5"
             >
-              <div className="mb-2 flex items-center justify-end gap-2">
-                <div className="flex rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
-                  {CHART_INTERVALS.map(({ label, hours }) => (
-                    <button
-                      key={hours}
-                      type="button"
-                      onClick={() => setChartInterval(hours)}
-                      className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
-                        chartInterval === hours
-                          ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
-                          : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                    History
+                  </span>
+                  <div className="flex rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
+                    {SNAPSHOT_RANGE_ORDER.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setSnapshotRange(id)}
+                        className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                          snapshotRange === id
+                            ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                            : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                        }`}
+                      >
+                        {SNAPSHOT_RANGE_LABEL[id]}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                    Buckets
+                  </span>
+                  <div className="flex rounded border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-0.5">
+                    {CHART_INTERVALS.filter(({ hours }) =>
+                      allowedBucketHours(snapshotRange).includes(hours)
+                    ).map(({ label, hours }) => (
+                      <button
+                        key={hours}
+                        type="button"
+                        onClick={() => setChartInterval(hours)}
+                        className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                          chartInterval === hours
+                            ? "bg-[var(--bg-card)] text-[var(--text-primary)]"
+                            : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 <button
                   type="button"
                   onClick={() => setChartShowAll((v) => !v)}
@@ -577,6 +624,7 @@ export function KanbanDetail({
                     </svg>
                   )}
                 </button>
+                </div>
               </div>
               <div className="h-[72vh] min-h-[380px] flex-1 sm:h-[440px] lg:h-[480px]">
                 <Line
