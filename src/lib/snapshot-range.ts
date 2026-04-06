@@ -29,7 +29,7 @@ export function allowedBucketHours(range: SnapshotRangeId): number[] {
     case "14d":
       return [1, 4, 6, 12, 24];
     case "30d":
-      return [12];
+      return [6, 12, 24];
     case "6m":
     case "1y":
       return [24];
