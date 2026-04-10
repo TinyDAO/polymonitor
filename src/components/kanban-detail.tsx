@@ -726,8 +726,8 @@ export function KanbanDetail({
           )}
         </div>
 
-        {/* Right: Addresses */}
-        <div className="flex w-full shrink-0 flex-col lg:w-[320px]">
+        {/* Right: Addresses — wider on desktop so labels can wrap */}
+        <div className="flex w-full shrink-0 flex-col lg:min-w-[20rem] lg:max-w-md lg:flex-[0_1_24rem]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-medium text-[var(--text-secondary)]">
               Addresses({kanban.addresses.length})
@@ -808,13 +808,15 @@ export function KanbanDetail({
                         }`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="truncate text-sm font-medium">{addr.label}</p>
+                          <div className="flex min-w-0 items-start gap-2">
+                            <p className="min-w-0 flex-1 text-sm font-medium leading-snug break-words">
+                              {addr.label}
+                            </p>
                             <a
                               href={`https://polymarket.com/profile/${addr.address}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="shrink-0 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-cyan)]"
+                              className="shrink-0 pt-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-cyan)]"
                             >
                               View
                             </a>
