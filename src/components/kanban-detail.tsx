@@ -152,6 +152,10 @@ export function KanbanDetail({
   const [chartInterval, setChartInterval] = useState(() =>
     defaultBucketHours("14d")
   );
+  const [editTarget, setEditTarget] = useState<Address | null>(null);
+  const [editAddress, setEditAddress] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   useEffect(() => {
     setChartInterval(defaultBucketHours(snapshotRange));
@@ -213,6 +217,42 @@ export function KanbanDetail({
       toast.error("Sync failed");
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  function openEditAddress(addr: Address) {
+    setEditTarget(addr);
+    setEditAddress(addr.address);
+    setEditLabel(addr.label);
+  }
+
+  async function handleEditAddress(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editTarget || !editAddress.trim() || !editLabel.trim()) return;
+    setEditSubmitting(true);
+    try {
+      const res = await fetch(`/api/addresses/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: editAddress.trim(),
+          label: editLabel.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Address updated");
+        setEditTarget(null);
+        router.refresh();
+        setSnapshotRefreshKey((k) => k + 1);
+        await handleSync();
+      } else {
+        toast.error(data.error || "Failed to update address");
+      }
+    } catch {
+      toast.error("Failed to update address");
+    } finally {
+      setEditSubmitting(false);
     }
   }
 
@@ -805,16 +845,26 @@ export function KanbanDetail({
                             </motion.div>
                           </div>
                           {editMode && (
-                            <button
-                              onClick={() => toggleRemove(addr.id)}
-                              className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                                toRemove.has(addr.id)
-                                  ? "bg-[var(--accent-red-dim)] text-[var(--accent-red)]"
-                                  : "text-[var(--text-muted)] hover:bg-[var(--accent-red-dim)] hover:text-[var(--accent-red)]"
-                              }`}
-                            >
-                              {toRemove.has(addr.id) ? "✓" : "×"}
-                            </button>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEditAddress(addr)}
+                                className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--accent-cyan)] transition-colors hover:bg-[var(--accent-cyan-dim)]"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleRemove(addr.id)}
+                                className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+                                  toRemove.has(addr.id)
+                                    ? "bg-[var(--accent-red-dim)] text-[var(--accent-red)]"
+                                    : "text-[var(--text-muted)] hover:bg-[var(--accent-red-dim)] hover:text-[var(--accent-red)]"
+                                }`}
+                              >
+                                {toRemove.has(addr.id) ? "✓" : "×"}
+                              </button>
+                            </div>
                           )}
                         </div>
                       </motion.div>
@@ -837,6 +887,79 @@ export function KanbanDetail({
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {editTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setEditTarget(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-xl border border-[var(--border-default)] bg-[var(--bg-card)] p-6 shadow-2xl"
+            >
+              <h2 className="mb-4 font-display text-lg font-semibold">
+                Edit address
+              </h2>
+              <p className="mb-4 text-xs leading-relaxed text-[var(--text-muted)]">
+                History for this row stays on the same slot (same snapshots). Run sync so
+                balances match the new Polymarket profile.
+              </p>
+              <form onSubmit={handleEditAddress} className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-sm text-[var(--text-secondary)]">
+                    Polymarket profile address (from polymarket.com/profile/0x...)
+                  </label>
+                  <input
+                    type="text"
+                    value={editAddress}
+                    onChange={(e) => setEditAddress(e.target.value)}
+                    placeholder="0x..."
+                    className="focus-ring w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-2.5 font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-cyan)] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm text-[var(--text-secondary)]">
+                    Label
+                  </label>
+                  <input
+                    type="text"
+                    value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)}
+                    placeholder="e.g. Main Account"
+                    className="focus-ring w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-elevated)] px-4 py-2.5 text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-cyan)] focus:outline-none"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditTarget(null)}
+                    className="rounded-lg px-4 py-2.5 text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      editSubmitting || !editAddress.trim() || !editLabel.trim()
+                    }
+                    className="rounded-lg bg-[var(--accent-cyan)] px-4 py-2.5 text-sm font-semibold text-[var(--bg-base)] transition-opacity disabled:opacity-50"
+                  >
+                    {editSubmitting ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showAddForm && (
